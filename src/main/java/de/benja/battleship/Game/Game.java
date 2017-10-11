@@ -23,6 +23,7 @@ public class Game {
     @OneToMany(mappedBy="game", fetch=FetchType.EAGER)
     private Set<GamePlayer> gamePlayers;
 
+
     public Game() {
 
     }

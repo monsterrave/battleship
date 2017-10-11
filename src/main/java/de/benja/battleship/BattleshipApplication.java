@@ -17,7 +17,23 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.config.annotation.authentication.configurers.GlobalAuthenticationConfigurerAdapter;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.web.WebAttributes;
+import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
 
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
@@ -57,15 +73,15 @@ public class BattleshipApplication {
     public CommandLineRunner initData() {
         return (args) -> {
             // save a couple of customers
-            Player pone  = new Player("j.bauer@ctu.gov");
+            Player pone  = new Player("j.bauer@ctu.gov","24");
             playerRepository.save(pone);
-            Player ptwo = new Player("c.obrian@ctu.gov");
+            Player ptwo = new Player("c.obrian@ctu.gov","42");
             playerRepository.save(ptwo);
-            Player pthree = new Player("t.almeida@ctu.gov");
+            Player pthree = new Player("t.almeida@ctu.gov","mole");
             playerRepository.save(pthree);
-            Player pfour = new Player("d.palmer@whitehouse.gov");
+            Player pfour = new Player("d.palmer@whitehouse.gov","bla");
             playerRepository.save(pfour);
-            Player pfive = new Player("kim_bauer@gmail.com");
+            Player pfive = new Player("kim_bauer@gmail.com","kb");
             playerRepository.save(pfive);
 
 
@@ -210,6 +226,86 @@ public class BattleshipApplication {
 
         };
 
+    }
+
+}
+
+
+//you create a subclass of GlobalAuthenticationConfigurerAdapter for your application
+//annotation @Configuration tells Spring to create an instance of this class automatically
+@Configuration
+class WebSecurityConfiguration extends GlobalAuthenticationConfigurerAdapter {
+
+    @Autowired
+    PlayerRepository playerRepository;
+
+    @Override
+    public void init(AuthenticationManagerBuilder auth) throws Exception {
+        auth.userDetailsService(userDetailsService());
+    }
+
+    //Within this class, you define a method that returns a UserDetailsService class with a loadUserByUsername(name) method. You define that method to get the player with the name name, if any, and return a UserDetails object with the player's name and password. Spring can then use that object to see if the right name and password have been sent for login
+    @Bean
+    UserDetailsService userDetailsService() {
+        return new UserDetailsService() {
+
+            @Override
+            public UserDetails loadUserByUsername(String userName) throws UsernameNotFoundException {
+                List<Player> players = playerRepository.findByUserName(userName);
+                if (!players.isEmpty()) {
+                    Player player = players.get(0);
+                    return new User(player.getUserName(), player.getPassword(),
+                            AuthorityUtils.createAuthorityList("USER"));
+                } else {
+                    throw new UsernameNotFoundException("Unknown user: " + userName);
+                }
+            }
+        };
+    }
+}
+
+@EnableWebSecurity
+@Configuration
+class WebSecurityConfig extends WebSecurityConfigurerAdapter {
+
+    //the rules for what is public, how information is sent, and so on, is specified in the definition of the configure() method.
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http.authorizeRequests()
+                //.antMatchers("/web/**").hasAuthority("USER")
+                .antMatchers("/api/**").hasAuthority("USER")
+                .antMatchers("/rest/**").hasAuthority("USER")
+                .and()
+                .formLogin();
+
+        http.formLogin()
+                .usernameParameter("userName")
+                .passwordParameter("password")
+                .loginPage("/app/login");
+
+        http.logout().logoutUrl("/app/logout");
+
+        // turn off checking for CSRF tokens
+        http.csrf().disable();
+
+        // if user is not authenticated, just send an authentication failure response
+        http.exceptionHandling().authenticationEntryPoint((req, res, exc) -> res.sendError(HttpServletResponse.SC_UNAUTHORIZED));
+
+        // if login is successful, just clear the flags asking for authentication
+        http.formLogin().successHandler((req, res, auth) -> clearAuthenticationAttributes(req));
+
+        // if login fails, just send an authentication failure response
+        http.formLogin().failureHandler((req, res, exc) -> res.sendError(HttpServletResponse.SC_UNAUTHORIZED));
+
+        // if logout is successful, just send a success response
+        http.logout().logoutSuccessHandler(new HttpStatusReturningLogoutSuccessHandler());
+    }
+
+    private void clearAuthenticationAttributes(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            session.removeAttribute(WebAttributes.AUTHENTICATION_EXCEPTION);
+        }
     }
 
 }

@@ -9,9 +9,11 @@ import de.benja.battleship.Player.PlayerRepository;
 import de.benja.battleship.Score.Score;
 import de.benja.battleship.Ship.ShipRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 
@@ -31,20 +33,33 @@ public class SalvoController {
     @Autowired
     private ShipRepository shipRepository;
 
-    @RequestMapping("/games")
-    //creating method that returns something like a list containing hashmaps
-    public List<HashMap> getGames() {
-        //task 4
-        /*ArrayList<Long> gameids = new ArrayList<Long>();
+    private Player getAuthPlayer(Authentication authentication) {
+        List<Player> players = playerRepository.findByUserName(authentication.getName());
+        return players.stream().findFirst().orElse(null);
+    }
 
-        List<Game> games = gameRepository.findAll();
-        games.forEach(game -> {
-            gameids.add(game.getId());
-        });
-        return gameids;*/
-        //Task 5 create game data objects (creating array with objects containing key value pairs)
+    //Controller Definition from module Java I, gonna be changed in Java II to send all the games of the currently logged in user
+    @RequestMapping("/games")
+    //Authentication object as optional parameter of the method getGames()
+    public Map getGames(Authentication authentication) {
+        //DRY!!! thats why getauthplayer method
+        //List<Player> players = playerRepository.findByUserName(authentication.getName());
+        //System.out.println(players);
+
+        Player authPlayer = getAuthPlayer(authentication);
+        //specifies the kind of map which is returned by the method getGames(), in this case its an HashMap
+        HashMap returnMap = new HashMap();
+
+        ArrayList<HashMap> playerArray = new ArrayList();
+
+        HashMap<String, Object> playerMap = new HashMap<String, Object>();
+        //the same as playerMap.put("id", players.get(0).getId());
+        playerMap.put("id", authPlayer.getId());
+        playerMap.put("email", authPlayer.getUserName());
+        //get all Games, so its possible, that currently logged in user can join other games
         List<Game> allGames = gameRepository.findAll();
         ArrayList<HashMap> gameArray = new ArrayList();
+        //looping thru allGames with one game as an iterator
         allGames.forEach(game -> {
             HashMap<String,Object> gameMap = new HashMap();
             gameMap.put("id",game.getId());
@@ -53,31 +68,35 @@ public class SalvoController {
 
             Set<GamePlayer> gamePlayers = game.getGamePlayers();
             List<Map> gamePlayerList = new ArrayList<Map>();
-
+            // for each gamePlayer a HashMap is created
             gamePlayers.forEach(gamePlayer -> {
                 HashMap<String,Object> gamePlayerMap = new HashMap<String,Object>();
                 gamePlayerMap.put("id", gamePlayer.getId());
 
                 Player player = gamePlayer.getPlayer();
 
-                HashMap<String, Object> playerMap = new HashMap<String, Object>();
-                playerMap.put("id", player.getId());
-                playerMap.put("email", player.getUserName());
+                HashMap<String, Object> gameplayerPlayerMap = new HashMap<String, Object>();
+                gameplayerPlayerMap.put("id", player.getId());
+                gameplayerPlayerMap.put("email", player.getUserName());
 
                 Score score = gamePlayer.getScore();
-                playerMap.put("score",score);
+                gameplayerPlayerMap.put("score",score);
 
-                gamePlayerMap.put("player",playerMap);
+                gamePlayerMap.put("player",gameplayerPlayerMap);
 
                 gamePlayerList.add(gamePlayerMap);
 
             });
 
             gameMap.put("gameplayers",gamePlayerList);
+
+            playerArray.add(gameMap);
             gameArray.add(gameMap);
         });
-
-        return gameArray;
+        playerArray.add(playerMap);
+        returnMap.put("player",playerMap);
+        returnMap.put("games",gameArray);
+        return returnMap;
     }
 
     @RequestMapping("/fullgames")
@@ -114,7 +133,7 @@ public class SalvoController {
         return response;
     }
 
-    @RequestMapping("/players")
+    @RequestMapping(path = "/players", method = RequestMethod.GET)
     public List<Map> getPlayers() {
         List<Map> returnArray = new ArrayList<Map>();
         List<Player> players = playerRepository.findAll();
@@ -134,5 +153,25 @@ public class SalvoController {
 
         return returnArray;
     };
+
+    @RequestMapping(path = "/players", method = RequestMethod.POST)
+    public ResponseEntity<Map<String, Object>> createPlayer(@RequestParam String userName, String password) {
+        if (userName.isEmpty()) {
+            return new ResponseEntity<>(makeMap("error", "No name"), HttpStatus.FORBIDDEN);
+        }
+        Player player = playerRepository.findOneByUserName(userName);
+        if (player != null) {
+            return new ResponseEntity<>(makeMap("error", "No such user"), HttpStatus.CONFLICT);
+        }
+        player = playerRepository.save(new Player(userName,password));
+        return new ResponseEntity<>(makeMap("id", player.getId()) , HttpStatus.CREATED);
+    }
+
+    private Map<String, Object> makeMap(String key, Object value) {
+        Map<String, Object> map = new HashMap<>();
+        map.put(key, value);
+        return map;
+    }
+
 }
 
