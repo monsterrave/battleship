@@ -6,7 +6,10 @@ import de.benja.battleship.GamePlayer.GamePlayer;
 import de.benja.battleship.GamePlayer.GamePlayerRepository;
 import de.benja.battleship.Player.Player;
 import de.benja.battleship.Player.PlayerRepository;
+import de.benja.battleship.Salvo.Salvo;
+import de.benja.battleship.Salvo.SalvoRepository;
 import de.benja.battleship.Score.Score;
+import de.benja.battleship.Ship.Ship;
 import de.benja.battleship.Ship.ShipRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -32,6 +35,9 @@ public class SalvoController {
 
     @Autowired
     private ShipRepository shipRepository;
+
+    @Autowired
+    private SalvoRepository salvoRepository;
 
     private Player getAuthPlayer(Authentication authentication) {
         List<Player> players = playerRepository.findByUserName(authentication.getName());
@@ -99,6 +105,71 @@ public class SalvoController {
         return returnMap;
     }
 
+    @RequestMapping(path ="/games", method = RequestMethod.POST)
+    public GamePlayer createGame (Authentication authentication) {
+
+        Player authPlayer = getAuthPlayer(authentication);
+
+        Game newGame = new Game();
+        gameRepository.save(newGame);
+
+        GamePlayer newGamePlayer = new GamePlayer(new Date(),newGame,authPlayer);
+        gamePlayerRepository.save(newGamePlayer);
+
+        return newGamePlayer;
+
+    }
+
+    @RequestMapping(path ="/games/{gameID}/players", method = RequestMethod.POST)
+    public GamePlayer joinGame (Authentication authentication, @PathVariable long gameID) {
+
+        Player authPlayer = getAuthPlayer(authentication);
+
+        Game openGame = gameRepository.findOne(gameID);
+
+        GamePlayer newGamePlayer = new GamePlayer(new Date(),openGame,authPlayer);
+        gamePlayerRepository.save(newGamePlayer);
+
+        return  newGamePlayer;
+
+
+    }
+
+    @RequestMapping(path ="/games/players/{gamePlayerId}/ships", method = RequestMethod.POST)
+    public ResponseEntity placeShips (@PathVariable long gamePlayerId, @RequestBody List<Ship> ships) {
+        GamePlayer currentGamePlayer = gamePlayerRepository.findOne(gamePlayerId);
+
+        ships.forEach(ship -> {
+            ship.setGamePlayer(currentGamePlayer);
+            shipRepository.save(ship);
+        });
+
+        return new ResponseEntity(HttpStatus.CREATED);
+    }
+
+    @RequestMapping(path ="/games/players/{gamePlayerId}/salvoes", method = RequestMethod.POST)
+    public ResponseEntity placeSalvoes (Authentication authentication, @PathVariable long gamePlayerId, @RequestBody List<Salvo> salvoes) {
+        GamePlayer currentGamePlayer = gamePlayerRepository.findOne(gamePlayerId);
+
+        /*salvoes.forEach(salvo -> {
+            salvo.setGamePlayer(currentGamePlayer);
+            salvoRepository.save(salvo);
+        });
+
+        return new ResponseEntity(HttpStatus.CREATED);*/
+
+        HashMap<String, Object> response = new HashMap<>();
+
+        HttpStatus status = HttpStatus.CREATED;
+
+        if ( !authentication.isAuthenticated() ) {
+            response.put("error","You are not logged in");
+            status = HttpStatus.UNAUTHORIZED;
+        }
+
+        return new ResponseEntity(HttpStatus.UNAUTHORIZED);
+    }
+
     @RequestMapping("/fullgames")
     public List<Game> getFullGames() {
         return gameRepository.findAll();
@@ -153,7 +224,7 @@ public class SalvoController {
 
         return returnArray;
     };
-
+    // /players endpoint but with POST method
     @RequestMapping(path = "/players", method = RequestMethod.POST)
     public ResponseEntity<Map<String, Object>> createPlayer(@RequestParam String userName, String password) {
         if (userName.isEmpty()) {
@@ -164,7 +235,7 @@ public class SalvoController {
             return new ResponseEntity<>(makeMap("error", "No such user"), HttpStatus.CONFLICT);
         }
         player = playerRepository.save(new Player(userName,password));
-        return new ResponseEntity<>(makeMap("id", player.getId()) , HttpStatus.CREATED);
+        return new ResponseEntity<>(makeMap("id", player.getUserName()) , HttpStatus.CREATED);
     }
 
     private Map<String, Object> makeMap(String key, Object value) {
@@ -172,6 +243,8 @@ public class SalvoController {
         map.put(key, value);
         return map;
     }
+
+
 
 }
 
